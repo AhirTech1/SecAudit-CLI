@@ -5,12 +5,11 @@ in JavaScript/Node.js projects using regex rules and Shannon entropy.
 """
 
 import math
-import os
 import re
 from pathlib import Path
 
-from secaudit.config import DEFAULT_IGNORE_DIRS, DEFAULT_SCAN_EXTENSIONS
 from secaudit.models import HIGH, MEDIUM, Issue
+from secaudit.utils import walk_project_files
 
 # ---------------------------------------------------------------------------
 # Regex rules — each tuple is (compiled_pattern, issue_type, severity, msg)
@@ -173,30 +172,15 @@ def scan_for_secrets(root_path: Path) -> tuple[list[Issue], int]:
         number of files that were inspected.
     """
     issues: list[Issue] = []
-    files_scanned: int = 0
+    walk = walk_project_files(root_path)
 
-    ignore_dirs = set(DEFAULT_IGNORE_DIRS)
-    scan_extensions = set(DEFAULT_SCAN_EXTENSIONS)
+    for filepath in walk.files:
+        try:
+            with open(filepath, encoding="utf-8", errors="ignore") as fh:
+                for line_num, line in enumerate(fh, start=1):
+                    issues.extend(_check_regex_rules(line, line_num, filepath))
+                    issues.extend(_check_entropy(line, line_num, filepath))
+        except (OSError, PermissionError):
+            continue
 
-    for dirpath, dirnames, filenames in os.walk(root_path):
-        # Prune ignored directories in-place so os.walk skips them
-        dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
-
-        for filename in filenames:
-            ext = os.path.splitext(filename)[1]
-            if ext not in scan_extensions:
-                continue
-
-            filepath = os.path.join(dirpath, filename)
-            files_scanned += 1
-
-            try:
-                with open(filepath, encoding="utf-8", errors="ignore") as fh:
-                    for line_num, line in enumerate(fh, start=1):
-                        issues.extend(_check_regex_rules(line, line_num, filepath))
-                        issues.extend(_check_entropy(line, line_num, filepath))
-            except (OSError, PermissionError):
-                # Skip unreadable files silently
-                continue
-
-    return issues, files_scanned
+    return issues, walk.files_scanned

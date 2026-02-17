@@ -10,6 +10,7 @@ from rich.table import Table
 
 from secaudit import __app_name__, __version__
 from secaudit.models import HIGH, LOW, MEDIUM
+from secaudit.scanners.patterns import scan_for_patterns
 from secaudit.scanners.secrets import scan_for_secrets
 
 # ---------------------------------------------------------------------------
@@ -102,13 +103,20 @@ def scan(
     )
     console.print(f"[dim]Target:[/dim] {target}\n")
 
-    # --- Run secret scanner ---
-    console.print("[bold]Scanning for secrets…[/bold]\n")
-    issues, files_scanned = scan_for_secrets(target)
+    # --- Run scanners ---
+    console.print("[bold]Scanning for secrets…[/bold]")
+    secret_issues, secrets_files = scan_for_secrets(target)
+
+    console.print("[bold]Scanning for insecure patterns…[/bold]\n")
+    pattern_issues, patterns_files = scan_for_patterns(target)
+
+    # Merge results
+    all_issues = secret_issues + pattern_issues
+    files_scanned = max(secrets_files, patterns_files)
 
     # --- Display results ---
-    if issues:
-        _print_issues_table(issues)
+    if all_issues:
+        _print_issues_table(all_issues)
     else:
         console.print(
             Panel(
@@ -117,7 +125,7 @@ def scan(
             )
         )
 
-    _print_summary(files_scanned, issues)
+    _print_summary(files_scanned, all_issues)
 
 
 # ---------------------------------------------------------------------------
