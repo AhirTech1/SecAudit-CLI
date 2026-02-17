@@ -160,16 +160,36 @@ def _check_entropy(
 # ---------------------------------------------------------------------------
 
 
+def scan_file_for_secrets(file_path: str, content: str) -> list[Issue]:
+    """Scan a single file's content for hardcoded secrets.
+
+    This is the per-file API used by the unified pipeline.
+
+    Args:
+        file_path: Path to the file (for reporting).
+        content: Full text content of the file.
+
+    Returns:
+        List of detected ``Issue`` objects.
+    """
+    issues: list[Issue] = []
+    for line_num, line in enumerate(content.splitlines(), start=1):
+        issues.extend(_check_regex_rules(line, line_num, file_path))
+        issues.extend(_check_entropy(line, line_num, file_path))
+    return issues
+
+
 def scan_for_secrets(root_path: Path) -> tuple[list[Issue], int]:
     """Recursively scan a project directory for hardcoded secrets.
+
+    Convenience wrapper that walks files and delegates to
+    :func:`scan_file_for_secrets`.
 
     Args:
         root_path: Root directory of the project to scan.
 
     Returns:
-        A tuple of ``(issues, files_scanned)`` where *issues* is the list
-        of detected ``Issue`` objects and *files_scanned* is the total
-        number of files that were inspected.
+        A tuple of ``(issues, files_scanned)``.
     """
     issues: list[Issue] = []
     walk = walk_project_files(root_path)
@@ -177,10 +197,9 @@ def scan_for_secrets(root_path: Path) -> tuple[list[Issue], int]:
     for filepath in walk.files:
         try:
             with open(filepath, encoding="utf-8", errors="ignore") as fh:
-                for line_num, line in enumerate(fh, start=1):
-                    issues.extend(_check_regex_rules(line, line_num, filepath))
-                    issues.extend(_check_entropy(line, line_num, filepath))
+                content = fh.read()
         except (OSError, PermissionError):
             continue
+        issues.extend(scan_file_for_secrets(filepath, content))
 
     return issues, walk.files_scanned

@@ -107,7 +107,6 @@ def _check_file_level_issues(
     # --- Potential IDOR ---
     if _ROUTE_PARAM_RE.search(content) and _REQ_PARAMS_RE.search(content):
         if not _VALIDATION_KEYWORDS.search(content):
-            # Find the first line with req.params for a useful line number
             for line_num, line in enumerate(content.splitlines(), start=1):
                 if _REQ_PARAMS_RE.search(line):
                     issues.append(
@@ -130,16 +129,41 @@ def _check_file_level_issues(
 # ---------------------------------------------------------------------------
 
 
+def scan_file_for_patterns(file_path: str, content: str) -> list[Issue]:
+    """Scan a single file's content for insecure code patterns.
+
+    This is the per-file API used by the unified pipeline.
+
+    Args:
+        file_path: Path to the file (for reporting).
+        content: Full text content of the file.
+
+    Returns:
+        List of detected ``Issue`` objects.
+    """
+    issues: list[Issue] = []
+
+    # Line-by-line: dangerous execution calls
+    for line_num, line in enumerate(content.splitlines(), start=1):
+        issues.extend(_check_dangerous_exec(line, line_num, file_path))
+
+    # File-level: middleware & IDOR checks
+    issues.extend(_check_file_level_issues(content, file_path))
+
+    return issues
+
+
 def scan_for_patterns(root_path: Path) -> tuple[list[Issue], int]:
     """Recursively scan a project for insecure code patterns.
+
+    Convenience wrapper that walks files and delegates to
+    :func:`scan_file_for_patterns`.
 
     Args:
         root_path: Root directory of the project to scan.
 
     Returns:
-        A tuple of ``(issues, files_scanned)`` where *issues* is the list
-        of detected ``Issue`` objects and *files_scanned* is the total
-        number of files that were inspected.
+        A tuple of ``(issues, files_scanned)``.
     """
     issues: list[Issue] = []
     walk = walk_project_files(root_path)
@@ -150,12 +174,6 @@ def scan_for_patterns(root_path: Path) -> tuple[list[Issue], int]:
                 content = fh.read()
         except (OSError, PermissionError):
             continue
-
-        # Line-by-line: dangerous execution calls
-        for line_num, line in enumerate(content.splitlines(), start=1):
-            issues.extend(_check_dangerous_exec(line, line_num, filepath))
-
-        # File-level: middleware & IDOR checks
-        issues.extend(_check_file_level_issues(content, filepath))
+        issues.extend(scan_file_for_patterns(filepath, content))
 
     return issues, walk.files_scanned
