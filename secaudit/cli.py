@@ -6,8 +6,11 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
 from secaudit import __app_name__, __version__
+from secaudit.models import HIGH, LOW, MEDIUM
+from secaudit.scanners.secrets import scan_for_secrets
 
 # ---------------------------------------------------------------------------
 # App & Console
@@ -21,6 +24,16 @@ app = typer.Typer(
 )
 
 console = Console()
+
+# ---------------------------------------------------------------------------
+# Severity → Rich color mapping
+# ---------------------------------------------------------------------------
+
+_SEVERITY_COLORS: dict[str, str] = {
+    HIGH: "red",
+    MEDIUM: "yellow",
+    LOW: "blue",
+}
 
 # ---------------------------------------------------------------------------
 # Version callback
@@ -88,3 +101,78 @@ def scan(
         )
     )
     console.print(f"[dim]Target:[/dim] {target}\n")
+
+    # --- Run secret scanner ---
+    console.print("[bold]Scanning for secrets…[/bold]\n")
+    issues, files_scanned = scan_for_secrets(target)
+
+    # --- Display results ---
+    if issues:
+        _print_issues_table(issues)
+    else:
+        console.print(
+            Panel(
+                "[bold green]✔ No security issues found[/bold green]",
+                border_style="green",
+            )
+        )
+
+    _print_summary(files_scanned, issues)
+
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+
+
+def _print_issues_table(issues: list) -> None:
+    """Render detected issues as a Rich table."""
+    table = Table(
+        title="🔍 Detected Issues",
+        show_lines=True,
+        header_style="bold magenta",
+    )
+    table.add_column("#", style="dim", width=4)
+    table.add_column("File", style="cyan", max_width=40)
+    table.add_column("Line", justify="right", style="dim")
+    table.add_column("Type", style="bold")
+    table.add_column("Severity", justify="center")
+    table.add_column("Message", max_width=50)
+
+    for idx, issue in enumerate(issues, start=1):
+        color = _SEVERITY_COLORS.get(issue.severity, "white")
+        table.add_row(
+            str(idx),
+            issue.file_path,
+            str(issue.line_number),
+            issue.issue_type,
+            f"[bold {color}]{issue.severity}[/bold {color}]",
+            issue.message,
+        )
+
+    console.print(table)
+    console.print()
+
+
+def _print_summary(files_scanned: int, issues: list) -> None:
+    """Print a scan summary with severity breakdown."""
+    severity_counts: dict[str, int] = {HIGH: 0, MEDIUM: 0, LOW: 0}
+    for issue in issues:
+        severity_counts[issue.severity] = severity_counts.get(issue.severity, 0) + 1
+
+    summary_lines = [
+        f"[bold]Files scanned:[/bold] {files_scanned}",
+        f"[bold]Total issues:[/bold]  {len(issues)}",
+        "",
+        f"[bold red]HIGH:[/bold red]   {severity_counts[HIGH]}",
+        f"[bold yellow]MEDIUM:[/bold yellow] {severity_counts[MEDIUM]}",
+        f"[bold blue]LOW:[/bold blue]    {severity_counts[LOW]}",
+    ]
+
+    console.print(
+        Panel(
+            "\n".join(summary_lines),
+            title="📊 Scan Summary",
+            border_style="cyan",
+        )
+    )
