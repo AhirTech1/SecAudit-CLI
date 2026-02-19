@@ -4,7 +4,11 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
-from secaudit.config import DEFAULT_IGNORE_DIRS, DEFAULT_SCAN_EXTENSIONS
+from secaudit.config import (
+    DEFAULT_IGNORE_DIRS,
+    DEFAULT_IGNORE_FILES,
+    DEFAULT_SCAN_EXTENSIONS,
+)
 
 
 def validate_path(path: str) -> Path:
@@ -54,8 +58,8 @@ def walk_project_files(
 ) -> FileWalkResult:
     """Walk a project directory and collect scannable file paths.
 
-    Respects ``DEFAULT_IGNORE_DIRS`` and ``DEFAULT_SCAN_EXTENSIONS`` from
-    config unless overrides are provided.
+    Respects ``DEFAULT_IGNORE_DIRS``, ``DEFAULT_IGNORE_FILES``, and
+    ``DEFAULT_SCAN_EXTENSIONS`` from config unless overrides are provided.
 
     Args:
         root_path: Root directory to walk.
@@ -65,16 +69,23 @@ def walk_project_files(
     Returns:
         A :class:`FileWalkResult` with the matching file paths and count.
     """
-    _ignore = ignore_dirs if ignore_dirs is not None else set(DEFAULT_IGNORE_DIRS)
-    _extensions = scan_extensions if scan_extensions is not None else set(DEFAULT_SCAN_EXTENSIONS)
+    _ignore_dirs = (
+        ignore_dirs if ignore_dirs is not None else set(DEFAULT_IGNORE_DIRS)
+    )
+    _extensions = (
+        scan_extensions if scan_extensions is not None else set(DEFAULT_SCAN_EXTENSIONS)
+    )
 
     result = FileWalkResult()
 
     for dirpath, dirnames, filenames in os.walk(root_path):
         # Prune ignored directories in-place so os.walk skips them
-        dirnames[:] = [d for d in dirnames if d not in _ignore]
+        dirnames[:] = [d for d in dirnames if d not in _ignore_dirs]
 
         for filename in filenames:
+            if filename in DEFAULT_IGNORE_FILES:
+                continue
+
             ext = os.path.splitext(filename)[1]
             if ext not in _extensions:
                 continue

@@ -15,6 +15,14 @@ DEFAULT_IGNORE_DIRS: list[str] = [
     ".next",
 ]
 
+DEFAULT_IGNORE_FILES: set[str] = {
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
+}
+
 DEFAULT_SCAN_EXTENSIONS: list[str] = [
     ".js",
     ".jsx",
@@ -22,6 +30,5 @@ DEFAULT_SCAN_EXTENSIONS: list[str] = [
     ".tsx",
     ".mjs",
     ".cjs",
-    ".json",
     ".env",
 ]

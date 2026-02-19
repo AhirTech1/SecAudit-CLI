@@ -44,27 +44,25 @@ _RULES: list[tuple[re.Pattern[str], str, str, str]] = [
 # Entropy helpers
 # ---------------------------------------------------------------------------
 
-# Common tokens that look high-entropy but are harmless
-_ENTROPY_SKIP_WORDS: set[str] = {
-    "node_modules",
-    "package-lock",
-    "function",
-    "constructor",
-    "prototype",
-    "undefined",
-    "application",
-    "description",
-    "dependencies",
-    "devDependencies",
-    "peerDependencies",
-    "optionalDependencies",
-    "configuration",
-    "implementation",
-    "documentation",
-    "Authorization",
-    "authentication",
-    "Content-Type",
-}
+# Regex to find quoted string literals: '...' or "..."
+_STRING_LITERAL_RE = re.compile(r"""(["'])(.*?)\1""")
+
+# Safe patterns to exclude from entropy checks
+_SAFE_PATTERNS: list[re.Pattern[str]] = [
+    # UUID v4
+    re.compile(
+        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    ),
+    # Pure hex string (hashes, object IDs)
+    re.compile(r"^[a-fA-F0-9]{32,}$"),
+]
+
+# Keywords that suggest the string is NOT a secret (e.g. hash context)
+_SAFE_KEYWORDS: set[str] = {"sha", "integrity", "checksum", "md5"}
+
+# High entropy threshold (bits/char)
+_ENTROPY_THRESHOLD: float = 4.5
+_MIN_LENGTH: int = 20
 
 
 def calculate_entropy(text: str) -> float:
@@ -130,18 +128,32 @@ def _check_entropy(
     line_num: int,
     file_path: str,
 ) -> list[Issue]:
-    """Flag individual tokens on *line* that exhibit high entropy."""
-    issues: list[Issue] = []
-    # Split on common delimiters to isolate tokens
-    tokens = re.split(r'[\s"\'=:;,\(\)\[\]\{\}]+', line)
+    """Flag individual tokens on *line* that exhibit high entropy.
 
-    for token in tokens:
-        if len(token) < 20:
+    Only checks string literals inside quotes.
+    """
+    issues: list[Issue] = []
+
+    # Find all quoted string literals
+    matches = _STRING_LITERAL_RE.findall(line)
+    if not matches:
+        return issues
+
+    # Quick check for safe keywords in the full line
+    line_lower = line.lower()
+    if any(k in line_lower for k in _SAFE_KEYWORDS):
+        return issues
+
+    for _, content in matches:
+        if len(content) < _MIN_LENGTH:
             continue
-        if token in _ENTROPY_SKIP_WORDS:
+
+        # Check exclusions
+        if any(p.match(content) for p in _SAFE_PATTERNS):
             continue
-        entropy = calculate_entropy(token)
-        if entropy > 4.0:
+
+        entropy = calculate_entropy(content)
+        if entropy > _ENTROPY_THRESHOLD:
             issues.append(
                 Issue(
                     file_path=file_path,
